@@ -4,33 +4,38 @@ function Invoke-CIPPStandardallowOAuthTokens {
     Internal
     #>
     param($Tenant, $Settings)
-    $CurrentInfo = new-graphgetRequest -uri 'https://graph.microsoft.com/beta/policies/authenticationMethodsPolicy/authenticationMethodConfigurations/softwareOath' -tenantid $Tenant
-    If ($Settings.remediate) {
-        
-        try {
-            $CurrentInfo.state = 'enabled'
-            $body = ($CurrentInfo | ConvertTo-Json -Depth 10)
-    (New-GraphPostRequest -tenantid $tenant -Uri 'https://graph.microsoft.com/beta/policies/authenticationMethodsPolicy/authenticationMethodConfigurations/softwareOath' -Type patch -Body $body -ContentType 'application/json')
 
-            Write-LogMessage -API 'Standards' -tenant $tenant -message 'Enabled software OTP/oAuth tokens' -sev Info
-        } catch {
-            Write-LogMessage -API 'Standards' -tenant $tenant -message "Failed to enable software OTP/oAuth tokens. Error: $($_.exception.message)" -sev 'Error'
-        }
-    }
-    if ($Settings.alert) {
+    $CurrentInfo = New-GraphGetRequest -uri 'https://graph.microsoft.com/beta/policies/authenticationMethodsPolicy/authenticationMethodConfigurations/softwareOath' -tenantid $Tenant
+    $State = if ($CurrentInfo.state -eq 'enabled') { $true } else { $false }
 
-        if ($CurrentInfo.state -eq 'enabled') {
-            Write-LogMessage -API 'Standards' -tenant $tenant -message 'software OTP/oAuth tokens is enabled' -sev Info
+    if ($Settings.report -eq $true) {
+        Add-CIPPBPAField -FieldName 'softwareOath' -FieldValue $State -StoreAs bool -Tenant $tenant
+    }
+
+    # Input validation
+    if (([string]::IsNullOrWhiteSpace($Settings.state) -or $Settings.state -eq 'Select a value') -and ($Settings.remediate -eq $true -or $Settings.alert -eq $true)) {
+        Write-LogMessage -API 'Standards' -tenant $tenant -message 'allowOAuthTokens: Invalid state parameter set' -sev Error
+        Return
+    }
+
+
+
+    If ($Settings.remediate -eq $true) {
+        if ($State) {
+            Write-LogMessage -API 'Standards' -tenant $tenant -message 'Software OTP/oAuth tokens is already enabled.' -sev Info
         } else {
-            Write-LogMessage -API 'Standards' -tenant $tenant -message 'software OTP/oAuth tokens is not enabled' -sev Alert
+            Set-CIPPAuthenticationPolicy -Tenant $tenant -APIName 'Standards' -AuthenticationMethodId 'softwareOath' -Enabled $true
         }
     }
-    if ($Settings.report) {
-        if ($CurrentInfo.state -eq 'enabled') {
-            $CurrentInfo.state = $true
+
+    if ($Settings.alert -eq $true) {
+
+        if ($State) {
+            Write-LogMessage -API 'Standards' -tenant $tenant -message 'Software OTP/oAuth tokens is enabled' -sev Info
         } else {
-            $CurrentInfo.state = $false
+            Write-LogMessage -API 'Standards' -tenant $tenant -message 'Software OTP/oAuth tokens is not enabled' -sev Alert
         }
-        Add-CIPPBPAField -FieldName 'softwareOath' -FieldValue [bool]$CurrentInfo.state -StoreAs bool -Tenant $tenant
     }
+
+
 }
